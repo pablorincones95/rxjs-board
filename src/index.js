@@ -1,37 +1,53 @@
-const { fromEvent, map } = require("rxjs");
+const { fromEvent, map, mergeAll, takeUntil, merge } = require("rxjs");
 
 const canvas = document.getElementById("reactive-canvas");
+const restartButton = document.getElementById("restart-button");
 
 const cursorPosition = { x: 0, y: 0 };
 
-const onMouseDown$ = fromEvent(canvas, "mousedown").pipe(
-  map((event) => {
-    cursorPosition.x = event.clientX - canvas.offsetLeft;
-    cursorPosition.y = event.clientY - canvas.offsetTop;
-    console.log(cursorPosition);
-  })
-);
+const updateCursorPosition = (event) => {
+  cursorPosition.x = event.clientX - canvas.offsetLeft;
+  cursorPosition.y = event.clientY - canvas.offsetTop;
+};
 
-const onMouseMove$ = fromEvent(canvas, "mousemove").pipe(
-  map((event) => {
-    console.log(event);
-  })
-);
+const onMouseDown$ = fromEvent(canvas, "mousedown");
+onMouseDown$.subscribe(updateCursorPosition);
+const onMouseUp$ = fromEvent(canvas, "mouseup");
+const onMouseMove$ = fromEvent(canvas, "mousemove").pipe(takeUntil(onMouseUp$));
 
-const onMouseUp$ = fromEvent(canvas, "mouseup").pipe(
-  map((event) => {
-    console.log(event);
-  })
-);
-
-onMouseDown$.subscribe();
+let onMouseDownSubscription = onMouseDown$.subscribe();
 
 const canvasContext = canvas.getContext("2d");
-canvasContext.lineWidth = 7;
+canvasContext.lineWidth = 8;
+canvasContext.lineJoin = "round";
+canvasContext.lineCap = " round";
 canvasContext.strokeStyle = "white";
 
-canvasContext.beginPath();
-canvasContext.moveTo(0, 0);
-canvasContext.lineTo(100, 100);
-canvasContext.stroke();
-canvasContext.closePath();
+const paintStroke = (event) => {
+  canvasContext.beginPath();
+  canvasContext.moveTo(cursorPosition.x, cursorPosition.y);
+  updateCursorPosition(event);
+  canvasContext.lineTo(cursorPosition.x, cursorPosition.y);
+  canvasContext.stroke();
+  canvasContext.closePath();
+};
+
+const startPaint$ = onMouseDown$.pipe(
+  map(() => onMouseMove$),
+  mergeAll()
+);
+
+let startPaintSubscription = startPaint$.subscribe(paintStroke);
+
+const onLoadWindow$ = fromEvent(window, " load");
+const onRestartButton$ = fromEvent(restartButton, "click");
+
+const restartWhiteBoard$ = merge(onLoadWindow$, onRestartButton$);
+
+restartWhiteBoard$.subscribe(() => {
+  startPaintSubscription.unsubscribe();
+  onMouseDownSubscription.unsubscribe();
+  canvasContext.clearRect(0, 0, canvas.width, canvas.height);
+  startPaintSubscription = startPaint$.subscribe(paintStroke);
+  onMouseDownSubscription = onMouseDown$.subscribe();
+});
